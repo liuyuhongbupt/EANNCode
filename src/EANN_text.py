@@ -4,7 +4,7 @@ import time, os
 # import random
 import process_data_weibo as process_data
 import copy
-import cPickle as pickle
+import pickle
 from random import sample
 import torchvision
 from sklearn.model_selection import train_test_split

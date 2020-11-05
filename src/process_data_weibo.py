@@ -1,5 +1,5 @@
 # encoding=utf-8
-import cPickle as pickle
+import pickle
 import random
 from random import *
 import numpy as np
@@ -20,10 +20,19 @@ from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 import os.path
 from gensim.models import Word2Vec
+from builtins import str
 
+##COMMENTS FOR A LINE ARE ABOVE IT.
+
+
+
+#returns the list of all the stopwords, predefined in stop_words.txt
 def stopwordslist(filepath = '../Data/weibo/stop_words.txt'):
     stopwords = {}
     for line in open(filepath, 'r').readlines():
+        #converts the line into 'utf-8' format and removes trailing and leading whitespaces
+        #https://docs.python.org/2/howto/unicode.html
+        #utf-8 encoding is used because many of the words are in chinese so they cannot be represented with ascii encoding.
         line = unicode(line, "utf-8").strip()
         stopwords[line] = 1
     #stopwords = [line.strip() for line in open(filepath, 'r', encoding='utf-8').readlines()]
@@ -41,14 +50,25 @@ def clean_str_sst(string):
 # reload(sys)
 # sys.setdefaultencoding("utf-8")
 #
+
+#Converts the images to RGB and tranforms it into format specified in the object 'data_transforms'
 def read_image():
     image_list = {}
     file_list = ['../Data/weibo/nonrumor_images/', '../Data/weibo/rumor_images/']
     for path in file_list:
+        #transforms.Compose() is used to stack transforms
         data_transforms = transforms.Compose([
+            #resize the image so that shortest side is scaled to 256. Other sides scale accordingly to keep the same aspect ratio
             transforms.Resize(256),
+            #crops the centre of the image so that it's a 224*224 square.
             transforms.CenterCrop(224),
+            #converts the image into numbers (RGB values).
+            #every color value lies between 0 and 256, this function divides these values so that values of each color lie between 0 and 1
+            #Output for a specific image: (R value,G value, B value) where all the 3 values are between 0 and 1
             transforms.ToTensor(),
+            #normalises the input data using these values (first 3 values - mean and next 3 values - std dev) 
+            #normalising - mean is subtracted from each value and then the result is divided by the standard dev.
+            #the mean and standard dev were probably precomputed for this dataset, do not change unless you know they are wrong.
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
 
@@ -59,6 +79,7 @@ def read_image():
                 im = Image.open(path + filename).convert('RGB')
                 im = data_transforms(im)
                 #im = 1
+                #uses filename without the '.jpg' as a 'key' in the imaage_list map
                 image_list[filename.split('/')[-1].split(".")[0].lower()] = im
             except:
                 print(filename)
@@ -66,6 +87,7 @@ def read_image():
     #print("image names are " + str(image_list.keys()))
     return image_list
 
+#helper funtion to write all lines from 'data' into top_n_data.txt
 def write_txt(data):
     f = open("../Data/weibo/top_n_data.txt", 'wb')
     for line in data:
@@ -74,9 +96,26 @@ def write_txt(data):
         f.write("\n")
         f.write("\n")
     f.close()
+
 text_dict = {}
+
+#reads the relevant posts based on the flag, and stores their information in a dataframe 'post' with these columns:
+#columns:['post_id', 'image_id', 'original_post', 'post_text', 'label', 'event_label']
+#description of the columns:
+    #tweet id, urls of images, original text, cleaned text(after splitting into words and removing stopwords), label(fake/real), event (the real life event)
+#then uses 'image' and 'text_only' to find information of only relevant posts, 
+#what posts are relevant posts:
+    #if text_only is True, all posts.
+    #if text_only is False, then posts with images present in the list 'image.'
+#the information of relevant posts is returned in the following format:
+#a map with these keys:
+    #"post_text","original_post","image", "social_feature","label","event_label","post_id","image_id"
+    #"social_feature" key maps to  an empty list
+
 def write_data(flag, image, text_only):
 
+    #reads a tweet, the flag indicates whether this will be used in training, validation or test dataset
+    #returns post content of each relevant post, and dataframe with all the data entries (described in variable 'data')
     def read_post(flag):
         stop_words = stopwordslist()
         pre_path = "../Data/weibo/tweets/"
@@ -89,28 +128,42 @@ def write_data(flag, image, text_only):
         elif flag == "test":
             id = pickle.load(open("../Data/weibo/test_id.pickle", 'rb'))
 
-
+        #contains a list of all the original tweet contents (uncleaned)
         post_content = []
+        #unused
         labels = []
+        #unused
         image_ids = []
+        #unused
         twitter_ids = []
+        #contains a list of each data for each entry [i.e it is a list of 'line_data' (described later)]
         data = []
         column = ['post_id', 'image_id', 'original_post', 'post_text', 'label', 'event_label']
         key = -1
         map_id = {}
+        #map of event to the event number associated with it.
+        #event0 - 0
+        #event1 - 1
         top_data = []
+        #read each file
         for k, f in enumerate(file_list):
 
             f = open(f, 'rb')
+            #it reads test_nonrumor, then test_rumor, then train_nonrumor, then train_rumor
+            #k starts at 1.
+            #so when k is odd, label is real, otherwise label is false.
             if (k + 1) % 2 == 1:
                 label = 0  ### real is 0
             else:
                 label = 1  ####fake is 1
 
             twitter_id = 0
+            #line_data contains:
+                #twitter id, urls of images, original text, cleaned text(after splitting into words and removing stopwords), label(fake/real), event (the real life event)
             line_data = []
+            #unused
             top_line_data = []
-
+            #read each line in the file
             for i, l in enumerate(f.readlines()):
                 # key += 1
 
@@ -118,34 +171,47 @@ def write_data(flag, image, text_only):
                 # print(key/3)
                 # continue
 
-
+                #Each entry in the file corresponds to one tweet, and has three lines.
+                #first line has 15 fields split by '|'.
+                #first line - first entry in the first line is the twitter id, that is extracted here.
                 if (i + 1) % 3 == 1:
                     line_data = []
                     twitter_id = l.split('|')[0]
                     line_data.append(twitter_id)
 
 
-
+                #second line - urls of all the images used in the tweet
                 if (i + 1) % 3 == 2:
 
                     line_data.append(l.lower())
 
+                #third line - text content is extracted (this is in chinese)
                 if (i + 1) % 3 == 0:
                     l = clean_str_sst(unicode(l, "utf-8"))
 
+                    #jieba is a library used for chinese text processing.
+                    #cut_for_search function splits the chinese text into words.
+                    #seg_list has these words
                     seg_list = jieba.cut_for_search(l)
                     new_seg_list = []
+                    #remove stopwords from seg_list and store into new_seg_list
                     for word in seg_list:
+                        #exclude stop_words
                         if word not in stop_words:
                             new_seg_list.append(word)
-
+                    #clean_l prepends a space to the line
                     clean_l = " ".join(new_seg_list)
+                    #checks if the line data has length<10 and if this data is a part of the correect 'flag' dataset (train/test/validatoin)
+                    #the dataset that each tweet belongs to is defined in the corresponding pickle files.
+                    #eg: if flag is 'train', but the twitter id of this tweet is not in 'train_id.pickle', it will be ignored
                     if len(clean_l) > 10 and line_data[0] in id:
                         post_content.append(l)
                         line_data.append(l)
                         line_data.append(clean_l)
                         line_data.append(label)
                         event = int(id[line_data[0]])
+                        #add new event to map_id if it doesnt have it already.
+                        #also gives a number to the event, based on when it was added into the map_id hashmap.
                         if event not in map_id:
                             map_id[event] = len(map_id)
                             event = map_id[event]
@@ -160,21 +226,30 @@ def write_data(flag, image, text_only):
             f.close()
             # print(data)
             #     return post_content
-        
+        #convert the data into a dataframe
         data_df = pd.DataFrame(np.array(data), columns=column)
+        #this function doesnt doesnt do anything because top_data is an empty list.
         write_txt(top_data)
 
         return post_content, data_df
 
+    #'post' has the dataframe with all the data
+    # each entry in 'post' corresponds to one tweet and is in this format:
+    #this is the format for the columns:['post_id', 'image_id', 'original_post', 'post_text', 'label', 'event_label']
+    #description of the columns:
+        #tweet id, urls of images, original text, cleaned text(after splitting into words and removing stopwords), label(fake/real), event (the real life event)
     post_content, post = read_post(flag)
     print("Original post length is " + str(len(post_content)))
     print("Original data frame is " + str(post.shape))
 
-
+    #finds the entry in map 'db' with the longest 'value'
+    #UNUSED FUNCTION
     def find_most(db):
         maxcount = max(len(v) for v in db.values())
         return [k for k, v in db.items() if len(v) == maxcount]
 
+    #selects elements with specific indices from each list in 'train'
+    #UNUSED FUNCTION
     def select(train, selec_indices):
         temp = []
         for i in range(len(train)):
@@ -190,18 +265,36 @@ def write_data(flag, image, text_only):
 #         select_indices = np.delete(range(len(data[0])), remove_indice)
 #         return select(data, select_indices)
 
+    #extracts information about posts which have images in the list 'image'. 
+    #returns a map with these keys:
+    #"post_text","original_post","image", "social_feature","label","event_label","post_id","image_id"
+    #"social_feature" key maps to  an empty list
+
     def paired(text_only = False):
+        #'relevant' posts:
+        #if text_only is True, all posts.
+        #if text_only is False, then posts with images present in the list 'image.'
         ordered_image = []
+        #list of original content of all 'relevant' posts.
         ordered_text = []
+        #list of cleaned up content of all 'relevant' posts.
         ordered_post = []
+        #list of event labels of all 'relevant' posts
         ordered_event= []
+        #list of real/fake (i.e 0/1) labels of 'relevant' posts.
         label = []
+        #post_id: has tweet ids of all 'relevant' posts.
         post_id = []
+        #image_id_list:
+        #if text_only is False:list of ids of images in the posts that are also in the list 'image'
+        #if_text_only is True: empty
         image_id_list = []
         #image = []
 
         image_id = ""
+        #check all post_ids(tweet_ids) of each post
         for i, id in enumerate(post['post_id']):
+            #search if any image for a specific post is in the list 'image', then store the id of that image in 'image_id'
             for image_id in post.iloc[i]['image_id'].split('|'):
                 image_id = image_id.split("/")[-1].split(".")[0]
                 if image_id in image:
@@ -226,7 +319,6 @@ def write_data(flag, image, text_only):
         print("Label number is " + str(len(label)))
         print("Rummor number is " + str(sum(label)))
         print("Non rummor is " + str(len(label) - sum(label)))
-
 
 
         #
